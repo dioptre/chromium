@@ -870,6 +870,7 @@ source_set("browser") {
     "devtools/devtools_device_request_prompt_info.h",
     "devtools/devtools_http_handler.cc",
     "devtools/devtools_http_handler.h",
+    "devtools_ssl_socket_factory.cc",
     "devtools/devtools_instrumentation.cc",
     "devtools/devtools_instrumentation.h",
     "devtools/devtools_io_context.cc",

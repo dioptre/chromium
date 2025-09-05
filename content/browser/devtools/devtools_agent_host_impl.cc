@@ -213,6 +213,20 @@ void DevToolsAgentHost::StartRemoteDebuggingServer(
 }
 
 // static
+void DevToolsAgentHost::StartRemoteDebuggingDualServer(
+    std::unique_ptr<DevToolsSocketFactory> server_socket_factory,
+    std::unique_ptr<DevToolsSocketFactory> wss_socket_factory,
+    const base::FilePath& active_port_output_directory,
+    const base::FilePath& debug_frontend_dir) {
+  DevToolsManagerDelegate* delegate =
+      DevToolsManager::GetInstance()->delegate();
+  CHECK(delegate);
+  SetDevToolsHttpHandler(std::make_unique<DevToolsHttpHandler>(
+      delegate, std::move(server_socket_factory), std::move(wss_socket_factory),
+      active_port_output_directory, debug_frontend_dir));
+}
+
+// static
 void DevToolsAgentHost::StartRemoteDebuggingPipeHandler(
     base::OnceClosure on_disconnect) {
   int read_fd = kReadFD;

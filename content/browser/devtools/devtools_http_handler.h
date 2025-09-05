@@ -54,6 +54,14 @@ class DevToolsHttpHandler {
       const base::FilePath& active_port_output_directory,
       const base::FilePath& debug_frontend_dir);
 
+  // Extended constructor for WSS support.
+  DevToolsHttpHandler(
+      DevToolsManagerDelegate* delegate,
+      std::unique_ptr<DevToolsSocketFactory> server_socket_factory,
+      std::unique_ptr<DevToolsSocketFactory> wss_socket_factory,
+      const base::FilePath& active_port_output_directory,
+      const base::FilePath& debug_frontend_dir);
+
   DevToolsHttpHandler(const DevToolsHttpHandler&) = delete;
   DevToolsHttpHandler& operator=(const DevToolsHttpHandler&) = delete;
 
@@ -67,6 +75,15 @@ class DevToolsHttpHandler {
       ServerWrapper* server_wrapper,
       DevToolsSocketFactory* socket_factory,
       std::unique_ptr<net::IPEndPoint> ip_address);
+  friend void DualServerStartedOnUI(
+      base::WeakPtr<DevToolsHttpHandler> handler,
+      base::Thread* thread,
+      ServerWrapper* server_wrapper,
+      ServerWrapper* wss_server_wrapper,
+      DevToolsSocketFactory* socket_factory,
+      DevToolsSocketFactory* wss_socket_factory,
+      std::unique_ptr<net::IPEndPoint> ip_address,
+      std::unique_ptr<net::IPEndPoint> wss_ip_address);
 
   void OnJsonRequest(int connection_id,
                      const net::HttpServerRequestInfo& info);
@@ -85,6 +102,16 @@ class DevToolsHttpHandler {
                      std::unique_ptr<ServerWrapper> server_wrapper,
                      std::unique_ptr<DevToolsSocketFactory> socket_factory,
                      std::unique_ptr<net::IPEndPoint> ip_address);
+
+  void DualServerStarted(std::unique_ptr<base::Thread> thread,
+                         std::unique_ptr<ServerWrapper> server_wrapper,
+                         std::unique_ptr<ServerWrapper> wss_server_wrapper,
+                         std::unique_ptr<DevToolsSocketFactory> socket_factory,
+                         std::unique_ptr<DevToolsSocketFactory> wss_socket_factory,
+                         std::unique_ptr<net::IPEndPoint> ip_address,
+                         std::unique_ptr<net::IPEndPoint> wss_ip_address);
+
+  void InitRemoteAllowOrigins();
 
   void SendJson(int connection_id,
                 net::HttpStatusCode status_code,
@@ -117,7 +144,9 @@ class DevToolsHttpHandler {
   std::unique_ptr<base::Thread> thread_;
   std::string browser_guid_;
   std::unique_ptr<ServerWrapper> server_wrapper_;
+  std::unique_ptr<ServerWrapper> wss_server_wrapper_;  // WSS server
   std::unique_ptr<net::IPEndPoint> server_ip_address_;
+  std::unique_ptr<net::IPEndPoint> wss_server_ip_address_;  // WSS address
   using ConnectionToClientMap =
       std::map<int, std::unique_ptr<DevToolsAgentHostClientImpl>>;
   ConnectionToClientMap connection_to_client_;

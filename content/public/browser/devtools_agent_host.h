@@ -144,6 +144,14 @@ class CONTENT_EXPORT DevToolsAgentHost
       std::unique_ptr<DevToolsSocketFactory> server_socket_factory,
       const base::FilePath& active_port_output_directory,
       const base::FilePath& debug_frontend_dir);
+  
+  // Starts remote debugging with dual HTTP and WSS servers.
+  static void StartRemoteDebuggingDualServer(
+      std::unique_ptr<DevToolsSocketFactory> server_socket_factory,
+      std::unique_ptr<DevToolsSocketFactory> wss_socket_factory,
+      const base::FilePath& active_port_output_directory,
+      const base::FilePath& debug_frontend_dir);
+      
   static void StopRemoteDebuggingServer();
 
   // Starts remote debugging for browser target for the given fd=3

@@ -30,6 +30,7 @@
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_socket_factory.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/browser/devtools_ssl_socket_factory.h"
 #include "net/base/filename_util.h"
 #include "net/base/net_errors.h"
 #include "net/log/net_log_source.h"
@@ -227,9 +228,35 @@ RemoteDebuggingServer::GetInstance(PrefService* local_state) {
       return base::unexpected(maybe_allow_debugging.error());
     }
     being_debugged = true;
-    content::DevToolsAgentHost::StartRemoteDebuggingServer(
-        std::make_unique<TCPServerSocketFactory>(port), output_dir,
-        debug_frontend_dir);
+    
+    // Check for WSS support
+    std::string wss_port_str = 
+        command_line.GetSwitchValueASCII(::switches::kRemoteDebuggingWSSPort);
+    int wss_port = 0;
+    bool has_wss = !wss_port_str.empty() && 
+                   base::StringToInt(wss_port_str, &wss_port) && 
+                   wss_port > 0 && wss_port < 65535;
+    
+    if (has_wss) {
+      // Get SSL certificate and key paths (optional)
+      base::FilePath cert_path(command_line.GetSwitchValuePath(
+          ::switches::kRemoteDebuggingSSLCert));
+      base::FilePath key_path(command_line.GetSwitchValuePath(
+          ::switches::kRemoteDebuggingSSLKey));
+      
+      // Start dual HTTP/WSS servers
+      content::DevToolsAgentHost::StartRemoteDebuggingDualServer(
+          std::make_unique<TCPServerSocketFactory>(port),
+          std::make_unique<content::DevToolsSSLSocketFactory>(
+              cert_path, key_path, wss_port),
+          output_dir,
+          debug_frontend_dir);
+    } else {
+      // Start HTTP-only server
+      content::DevToolsAgentHost::StartRemoteDebuggingServer(
+          std::make_unique<TCPServerSocketFactory>(port), output_dir,
+          debug_frontend_dir);
+    }
   }
 
   if (being_debugged) {
