@@ -615,8 +615,8 @@ const char kRemoteDebuggingPipe[] = "remote-debugging-pipe";
 // Enables remote debug over HTTP on the specified port.
 const char kRemoteDebuggingPort[]           = "remote-debugging-port";
 
-// Enables remote debug over WSS (WebSocket Secure) on the specified port.
-const char kRemoteDebuggingWSSPort[]        = "remote-debugging-wss-port";
+// Enable WSS mode for remote debugging (replaces WS with WSS on single port).
+const char kRemoteDebuggingWSS[]            = "wss";
 
 // SSL certificate file for WSS remote debugging.
 const char kRemoteDebuggingSSLCert[]        = "remote-debugging-ssl-cert";

@@ -31,6 +31,10 @@ class CONTENT_EXPORT DevToolsSSLSocketFactory : public DevToolsSocketFactory {
   base::FilePath cert_path_;
   base::FilePath key_path_;
   int port_;
+  
+  // SSL certificate and private key (TODO: implement SSL wrapping)
+  // scoped_refptr<net::X509Certificate> certificate_;
+  // crypto::keypair::PrivateKey private_key_;
 };
 
 }  // namespace content

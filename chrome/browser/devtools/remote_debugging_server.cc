@@ -229,30 +229,23 @@ RemoteDebuggingServer::GetInstance(PrefService* local_state) {
     }
     being_debugged = true;
     
-    // Check for WSS support
-    std::string wss_port_str = 
-        command_line.GetSwitchValueASCII(::switches::kRemoteDebuggingWSSPort);
-    int wss_port = 0;
-    bool has_wss = !wss_port_str.empty() && 
-                   base::StringToInt(wss_port_str, &wss_port) && 
-                   wss_port > 0 && wss_port < 65535;
+    // Check for WSS mode
+    bool use_wss = command_line.HasSwitch(::switches::kRemoteDebuggingWSS);
     
-    if (has_wss) {
+    if (use_wss) {
       // Get SSL certificate and key paths (optional)
       base::FilePath cert_path(command_line.GetSwitchValuePath(
           ::switches::kRemoteDebuggingSSLCert));
       base::FilePath key_path(command_line.GetSwitchValuePath(
           ::switches::kRemoteDebuggingSSLKey));
       
-      // Start dual HTTP/WSS servers
-      content::DevToolsAgentHost::StartRemoteDebuggingDualServer(
-          std::make_unique<TCPServerSocketFactory>(port),
+      // Start WSS server (replaces regular WS server)
+      LOG(INFO) << "Starting DevTools with WSS support on port " << port;
+      content::DevToolsAgentHost::StartRemoteDebuggingServer(
           std::make_unique<content::DevToolsSSLSocketFactory>(
-              cert_path, key_path, wss_port),
-          output_dir,
-          debug_frontend_dir);
+              cert_path, key_path, port), output_dir, debug_frontend_dir);
     } else {
-      // Start HTTP-only server
+      // Start regular WS server
       content::DevToolsAgentHost::StartRemoteDebuggingServer(
           std::make_unique<TCPServerSocketFactory>(port), output_dir,
           debug_frontend_dir);

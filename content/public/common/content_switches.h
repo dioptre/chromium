@@ -173,7 +173,7 @@ CONTENT_EXPORT extern const char kReduceUserAgentMinorVersion[];
 CONTENT_EXPORT extern const char kReduceUserAgentPlatformOsCpu[];
 CONTENT_EXPORT extern const char kRemoteDebuggingPipe[];
 CONTENT_EXPORT extern const char kRemoteDebuggingPort[];
-CONTENT_EXPORT extern const char kRemoteDebuggingWSSPort[];
+CONTENT_EXPORT extern const char kRemoteDebuggingWSS[];
 CONTENT_EXPORT extern const char kRemoteDebuggingSSLCert[];
 CONTENT_EXPORT extern const char kRemoteDebuggingSSLKey[];
 CONTENT_EXPORT extern const char kRemoteAllowOrigins[];
