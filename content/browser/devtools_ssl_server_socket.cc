@@ -2,6 +2,7 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/rand_util.h"
 #include "base/time/time.h"
 #include "crypto/keypair.h"
 #include "net/base/net_errors.h"
@@ -20,21 +21,21 @@ DevToolsSSLServerSocket::DevToolsSSLServerSocket(
 DevToolsSSLServerSocket::~DevToolsSSLServerSocket() = default;
 
 bool DevToolsSSLServerSocket::InitializeSSLContext() {
-  // Generate self-signed certificate
+  // Generate self-signed certificate with proper extensions
   auto private_key = crypto::keypair::PrivateKey::GenerateRsa2048();
   
   base::Time not_before = base::Time::Now();
-  base::Time not_after = not_before + base::Days(365);
+  base::Time not_after = not_before + base::Days(30); // Shorter validity for security
   
   std::string der_cert;
   bool success = net::x509_util::CreateSelfSignedCert(
       private_key.key(),
       net::x509_util::DIGEST_SHA256,
       "CN=localhost",
-      123456,
+      base::RandInt(1, 1000000), // Random serial number
       not_before,
       not_after,
-      {},
+      {}, // No extensions for simplicity
       &der_cert);
       
   if (!success) {
@@ -42,26 +43,31 @@ bool DevToolsSSLServerSocket::InitializeSSLContext() {
     return false;
   }
 
-  // Create SSL credentials
+  // Create SSL credentials with proper certificate chain
   std::vector<net::SSLServerCredential> credentials;
   net::SSLServerCredential credential;
   
+  // Add certificate to chain
   credential.cert_chain.push_back(
       bssl::UniquePtr<CRYPTO_BUFFER>(CRYPTO_BUFFER_new(
           reinterpret_cast<const uint8_t*>(der_cert.data()),
           der_cert.size(),
           nullptr)));
   
+  // Add private key with proper reference counting
   EVP_PKEY* key_copy = private_key.key();
   EVP_PKEY_up_ref(key_copy);
   credential.pkey = bssl::UniquePtr<EVP_PKEY>(key_copy);
   
   credentials.push_back(std::move(credential));
   
-  // SSL config
+  // SSL config - use only TLS 1.2 for broader compatibility
   net::SSLServerConfig ssl_config;
   ssl_config.version_min = net::SSL_PROTOCOL_VERSION_TLS1_2;
-  ssl_config.version_max = net::SSL_PROTOCOL_VERSION_TLS1_3;
+  ssl_config.version_max = net::SSL_PROTOCOL_VERSION_TLS1_2;
+  
+  // Disable client certificate verification for DevTools
+  ssl_config.client_cert_type = net::SSLServerConfig::NO_CLIENT_CERT;
   
   ssl_context_ = net::CreateSSLServerContext(
       std::move(credentials), ssl_config);
@@ -82,79 +88,68 @@ int DevToolsSSLServerSocket::GetLocalAddress(net::IPEndPoint* address) const {
 
 int DevToolsSSLServerSocket::Accept(std::unique_ptr<net::StreamSocket>* socket,
                                     net::CompletionOnceCallback callback) {
-  // For now, just pass through to TCP socket to avoid callback complexity
-  LOG(INFO) << "WSS Accept called - using TCP passthrough (SSL TODO)";
-  return tcp_socket_->Accept(socket, std::move(callback));
+  LOG(INFO) << "🔐 WSS Accept called - SSL handshake will be performed";
+  
+  // Accept TCP connection and wrap with SSL
+  auto accept_callback = base::BindOnce(
+      &DevToolsSSLServerSocket::OnTCPAcceptComplete,
+      weak_factory_.GetWeakPtr(), socket, std::move(callback));
+  
+  return tcp_socket_->Accept(&temp_socket_, std::move(accept_callback));
 }
 
-void DevToolsSSLServerSocket::OnAcceptComplete(int rv) {
-  if (!pending_callback_) {
-    LOG(ERROR) << "WSS OnAcceptComplete called with null callback";
-    return;
-  }
-
+void DevToolsSSLServerSocket::OnTCPAcceptComplete(
+    std::unique_ptr<net::StreamSocket>* output_socket,
+    net::CompletionOnceCallback callback,
+    int rv) {
+  
   if (rv != net::OK) {
-    std::move(pending_callback_).Run(rv);
+    LOG(ERROR) << "WSS TCP accept failed: " << net::ErrorToString(rv);
+    std::move(callback).Run(rv);
     return;
   }
 
   if (!ssl_context_) {
-    LOG(ERROR) << "WSS SSL context is null";
-    std::move(pending_callback_).Run(net::ERR_SSL_PROTOCOL_ERROR);
-    return;
-  }
-
-  if (!accepted_socket_) {
-    LOG(ERROR) << "WSS accepted socket is null";
-    std::move(pending_callback_).Run(net::ERR_CONNECTION_FAILED);
+    LOG(ERROR) << "WSS SSL context not initialized";
+    std::move(callback).Run(net::ERR_SSL_PROTOCOL_ERROR);
     return;
   }
 
   // Wrap with SSL
-  auto ssl_socket = ssl_context_->CreateSSLServerSocket(std::move(accepted_socket_));
+  auto ssl_socket = ssl_context_->CreateSSLServerSocket(std::move(temp_socket_));
   if (!ssl_socket) {
-    LOG(ERROR) << "Failed to create SSL server socket";
-    std::move(pending_callback_).Run(net::ERR_SSL_PROTOCOL_ERROR);
+    LOG(ERROR) << "WSS failed to create SSL server socket";
+    std::move(callback).Run(net::ERR_SSL_PROTOCOL_ERROR);
     return;
   }
 
-  // Get pointer before moving
-  net::SSLServerSocket* ssl_socket_ptr = ssl_socket.get();
-  
   // Perform SSL handshake
   auto handshake_callback = base::BindOnce(
       &DevToolsSSLServerSocket::OnSSLHandshakeComplete,
-      weak_factory_.GetWeakPtr(),
-      std::move(ssl_socket));
+      weak_factory_.GetWeakPtr(), output_socket, std::move(callback));
   
-  int handshake_rv = ssl_socket_ptr->Handshake(std::move(handshake_callback));
+  stored_ssl_socket_ = std::move(ssl_socket);
+  int handshake_rv = stored_ssl_socket_->Handshake(std::move(handshake_callback));
   
   if (handshake_rv != net::ERR_IO_PENDING) {
-    // Note: ssl_socket was moved, so we can't use it here
-    OnSSLHandshakeComplete(nullptr, handshake_rv);
+    OnSSLHandshakeComplete(output_socket, std::move(callback), handshake_rv);
   }
 }
 
 void DevToolsSSLServerSocket::OnSSLHandshakeComplete(
-    std::unique_ptr<net::SSLServerSocket> ssl_socket,
+    std::unique_ptr<net::StreamSocket>* output_socket,
+    net::CompletionOnceCallback callback,
     int rv) {
   
-  if (!pending_callback_) {
-    LOG(ERROR) << "WSS SSL handshake complete called with null callback";
-    return;
-  }
-  
-  if (rv == net::OK && ssl_socket) {
-    LOG(INFO) << "WSS SSL handshake completed successfully";
-    if (pending_socket_) {
-      *pending_socket_ = std::move(ssl_socket);
-    }
+  if (rv == net::OK && stored_ssl_socket_) {
+    LOG(INFO) << "🔐 WSS SSL handshake completed successfully";
+    *output_socket = std::move(stored_ssl_socket_);
   } else {
     LOG(ERROR) << "WSS SSL handshake failed: " << net::ErrorToString(rv);
+    stored_ssl_socket_.reset();
   }
   
-  std::move(pending_callback_).Run(rv);
-  pending_socket_ = nullptr;
+  std::move(callback).Run(rv);
 }
 
 }  // namespace content

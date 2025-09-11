@@ -28,8 +28,11 @@ class DevToolsSSLServerSocket : public net::ServerSocket {
              net::CompletionOnceCallback callback) override;
 
  private:
-  void OnAcceptComplete(int rv);
-  void OnSSLHandshakeComplete(std::unique_ptr<net::SSLServerSocket> ssl_socket,
+  void OnTCPAcceptComplete(std::unique_ptr<net::StreamSocket>* output_socket,
+                           net::CompletionOnceCallback callback,
+                           int rv);
+  void OnSSLHandshakeComplete(std::unique_ptr<net::StreamSocket>* output_socket,
+                              net::CompletionOnceCallback callback,
                               int rv);
   
   bool InitializeSSLContext();
@@ -37,10 +40,9 @@ class DevToolsSSLServerSocket : public net::ServerSocket {
   std::unique_ptr<net::ServerSocket> tcp_socket_;
   std::unique_ptr<net::SSLServerContext> ssl_context_;
   
-  // For handling async Accept operations
-  raw_ptr<std::unique_ptr<net::StreamSocket>> pending_socket_ = nullptr;
-  net::CompletionOnceCallback pending_callback_;
-  std::unique_ptr<net::StreamSocket> accepted_socket_;
+  // For SSL handshake operations
+  std::unique_ptr<net::StreamSocket> temp_socket_;
+  std::unique_ptr<net::SSLServerSocket> stored_ssl_socket_;
   
   base::WeakPtrFactory<DevToolsSSLServerSocket> weak_factory_{this};
 };

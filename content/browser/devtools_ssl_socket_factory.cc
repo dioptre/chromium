@@ -1,6 +1,7 @@
 #include "content/public/browser/devtools_ssl_socket_factory.h"
 
 #include "base/logging.h"
+#include "content/browser/devtools_ssl_server_socket.h"
 #include "net/base/net_errors.h"
 #include "net/socket/tcp_server_socket.h"
 
@@ -26,8 +27,14 @@ std::unique_ptr<net::ServerSocket> DevToolsSSLSocketFactory::CreateForHttpServer
     return nullptr;
   }
 
-  LOG(INFO) << "WSS ServerSocket created on port " << port_ << " (TCP mode for testing)";
-  return std::move(tcp_socket);
+  // Create SSL-wrapped socket using EmbeddedTestServer approach
+  LOG(INFO) << "Creating WSS ServerSocket with SSL on port " << port_;
+  
+  // Use DevToolsSSLServerSocket for SSL wrapping
+  auto ssl_socket = std::make_unique<DevToolsSSLServerSocket>(std::move(tcp_socket));
+  
+  LOG(INFO) << "WSS ServerSocket created with SSL support on port " << port_;
+  return std::move(ssl_socket);
 }
 
 std::unique_ptr<net::ServerSocket> DevToolsSSLSocketFactory::CreateForTethering(
