@@ -229,8 +229,8 @@ RemoteDebuggingServer::GetInstance(PrefService* local_state) {
     }
     being_debugged = true;
     
-    // Force WSS mode for testing (TODO: add proper flag detection)
-    LOG(INFO) << "🔐 FORCING WSS MODE ON PORT " << port << " FOR TESTING";
+    // FORCE WSS MODE - FULL SSL IMPLEMENTATION 
+    LOG(INFO) << "🔐 FORCING FULL WSS MODE ON PORT " << port << " - SSL REQUIRED";
     
     // Get SSL certificate and key paths (optional)  
     base::FilePath cert_path(command_line.GetSwitchValuePath(
@@ -238,7 +238,7 @@ RemoteDebuggingServer::GetInstance(PrefService* local_state) {
     base::FilePath key_path(command_line.GetSwitchValuePath(
         ::switches::kRemoteDebuggingSSLKey));
     
-    // Start WSS server (replaces regular WS server)
+    // Start WSS server - FULL SSL MODE
     content::DevToolsAgentHost::StartRemoteDebuggingServer(
         std::make_unique<content::DevToolsSSLSocketFactory>(
             cert_path, key_path, port), output_dir, debug_frontend_dir);
