@@ -984,6 +984,37 @@ DevToolsHttpHandler::DevToolsHttpHandler(
   InitRemoteAllowOrigins();
 }
 
+DevToolsHttpHandler::DevToolsHttpHandler(
+    DevToolsManagerDelegate* delegate,
+    std::unique_ptr<DevToolsSocketFactory> wss_socket_factory,
+    const base::FilePath& output_directory,
+    const base::FilePath& debug_frontend_dir,
+    bool wss_only)
+    : wss_only_mode_(wss_only), delegate_(delegate) {
+  browser_guid_ =
+      delegate_->IsBrowserTargetDiscoverable()
+          ? kBrowserUrlPrefix
+          : base::StringPrintf(
+                "%s/%s", kBrowserUrlPrefix,
+                base::Uuid::GenerateRandomV4().AsLowercaseString().c_str());
+                
+  std::unique_ptr<base::Thread> thread(
+      new base::Thread(kDevToolsHandlerThreadName));
+  base::Thread::Options options;
+  options.message_pump_type = base::MessagePumpType::IO;
+  
+  if (thread->StartWithOptions(std::move(options))) {
+    auto task_runner = thread->task_runner();
+    task_runner->PostTask(
+        FROM_HERE,
+        base::BindOnce(&StartServerOnHandlerThread, weak_factory_.GetWeakPtr(),
+                       std::move(thread), std::move(wss_socket_factory),
+                       output_directory, debug_frontend_dir, browser_guid_,
+                       delegate_->HasBundledFrontendResources()));
+  }
+  InitRemoteAllowOrigins();
+}
+
 void DevToolsHttpHandler::InitRemoteAllowOrigins() {
   std::string remote_allow_origins = base::ToLowerASCII(
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
@@ -1128,16 +1159,22 @@ base::Value::Dict DevToolsHttpHandler::SerializeDescriptor(
   if (favicon_url.is_valid())
     dictionary.Set(kTargetFaviconUrlField, favicon_url.spec());
 
-  dictionary.Set(kTargetWebSocketDebuggerUrlField,
-                 base::StringPrintf("ws://%s%s%s", host.c_str(), kPageUrlPrefix,
-                                    id.c_str()));
-  
-  // Add WSS URL if WSS server is available
-  if (wss_server_ip_address_) {
-    std::string wss_host = wss_server_ip_address_->ToString();
-    dictionary.Set("webSocketDebuggerUrlSecure",
-                   base::StringPrintf("wss://%s%s%s", wss_host.c_str(), kPageUrlPrefix,
+  if (wss_only_mode_) {
+    dictionary.Set(kTargetWebSocketDebuggerUrlField,
+                   base::StringPrintf("wss://%s%s%s", host.c_str(), kPageUrlPrefix,
                                       id.c_str()));
+  } else {
+    dictionary.Set(kTargetWebSocketDebuggerUrlField,
+                   base::StringPrintf("ws://%s%s%s", host.c_str(), kPageUrlPrefix,
+                                      id.c_str()));
+    
+    // Add WSS URL if WSS server is available
+    if (wss_server_ip_address_) {
+      std::string wss_host = wss_server_ip_address_->ToString();
+      dictionary.Set("webSocketDebuggerUrlSecure",
+                     base::StringPrintf("wss://%s%s%s", wss_host.c_str(), kPageUrlPrefix,
+                                        id.c_str()));
+    }
   }
   
   dictionary.Set(kTargetDevtoolsFrontendUrlField,

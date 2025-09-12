@@ -40,6 +40,7 @@
 #include "content/public/browser/devtools_socket_factory.h"
 #include "content/public/browser/mojom_devtools_agent_host_delegate.h"
 #include "content/public/common/content_switches.h"
+#include "base/command_line.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -207,9 +208,19 @@ void DevToolsAgentHost::StartRemoteDebuggingServer(
   DevToolsManagerDelegate* delegate =
       DevToolsManager::GetInstance()->delegate();
   CHECK(delegate);
-  SetDevToolsHttpHandler(std::make_unique<DevToolsHttpHandler>(
-      delegate, std::move(server_socket_factory), active_port_output_directory,
-      debug_frontend_dir));
+  
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  bool use_wss = command_line->HasSwitch(switches::kRemoteDebuggingWSS);
+  
+  if (use_wss) {
+    SetDevToolsHttpHandler(std::make_unique<DevToolsHttpHandler>(
+        delegate, std::move(server_socket_factory), active_port_output_directory,
+        debug_frontend_dir, true));
+  } else {
+    SetDevToolsHttpHandler(std::make_unique<DevToolsHttpHandler>(
+        delegate, std::move(server_socket_factory), active_port_output_directory,
+        debug_frontend_dir));
+  }
 }
 
 // Dual server method removed - using single --wss flag approach instead

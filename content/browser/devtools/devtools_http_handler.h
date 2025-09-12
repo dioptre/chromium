@@ -62,6 +62,14 @@ class DevToolsHttpHandler {
       const base::FilePath& active_port_output_directory,
       const base::FilePath& debug_frontend_dir);
 
+  // WSS-only constructor.
+  DevToolsHttpHandler(
+      DevToolsManagerDelegate* delegate,
+      std::unique_ptr<DevToolsSocketFactory> wss_socket_factory,
+      const base::FilePath& active_port_output_directory,
+      const base::FilePath& debug_frontend_dir,
+      bool wss_only);
+
   DevToolsHttpHandler(const DevToolsHttpHandler&) = delete;
   DevToolsHttpHandler& operator=(const DevToolsHttpHandler&) = delete;
 
@@ -147,6 +155,7 @@ class DevToolsHttpHandler {
   std::unique_ptr<ServerWrapper> wss_server_wrapper_;  // WSS server
   std::unique_ptr<net::IPEndPoint> server_ip_address_;
   std::unique_ptr<net::IPEndPoint> wss_server_ip_address_;  // WSS address
+  bool wss_only_mode_ = false;  // True when --wss flag is used
   using ConnectionToClientMap =
       std::map<int, std::unique_ptr<DevToolsAgentHostClientImpl>>;
   ConnectionToClientMap connection_to_client_;
