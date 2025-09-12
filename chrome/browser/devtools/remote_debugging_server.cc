@@ -30,6 +30,7 @@
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_socket_factory.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/browser/devtools_ssl_socket_factory.h"
 #include "net/base/filename_util.h"
 #include "net/base/net_errors.h"
 #include "net/log/net_log_source.h"
@@ -227,9 +228,27 @@ RemoteDebuggingServer::GetInstance(PrefService* local_state) {
       return base::unexpected(maybe_allow_debugging.error());
     }
     being_debugged = true;
-    content::DevToolsAgentHost::StartRemoteDebuggingServer(
-        std::make_unique<TCPServerSocketFactory>(port), output_dir,
-        debug_frontend_dir);
+    
+    // Check if WSS mode requested
+    bool use_wss = command_line.HasSwitch(::switches::kRemoteDebuggingWSS);
+    
+    if (use_wss) {
+      // WSS mode - SSL on single port
+      LOG(INFO) << "Starting DevTools with WSS on port " << port;
+      base::FilePath cert_path(command_line.GetSwitchValuePath(
+          ::switches::kRemoteDebuggingSSLCert));
+      base::FilePath key_path(command_line.GetSwitchValuePath(
+          ::switches::kRemoteDebuggingSSLKey));
+          
+      content::DevToolsAgentHost::StartRemoteDebuggingServer(
+          std::make_unique<content::DevToolsSSLSocketFactory>(
+              cert_path, key_path, port), output_dir, debug_frontend_dir);
+    } else {
+      // Regular HTTP/WS mode
+      LOG(INFO) << "Starting DevTools with WS on port " << port;
+      content::DevToolsAgentHost::StartRemoteDebuggingServer(
+          std::make_unique<TCPServerSocketFactory>(port), output_dir, debug_frontend_dir);
+    }
   }
 
   if (being_debugged) {

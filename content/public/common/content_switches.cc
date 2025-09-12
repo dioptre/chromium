@@ -610,8 +610,19 @@ const char kReduceUserAgentPlatformOsCpu[] = "reduce-user-agent-platform-oscpu";
 // "JSON" (the default) or "CBOR".
 const char kRemoteDebuggingPipe[] = "remote-debugging-pipe";
 
+// WSS Remote Debugging Support
+
 // Enables remote debug over HTTP on the specified port.
 const char kRemoteDebuggingPort[]           = "remote-debugging-port";
+
+// Enable WSS mode for remote debugging (replaces WS with WSS on single port).
+const char kRemoteDebuggingWSS[]            = "wss";
+
+// SSL certificate file for WSS remote debugging.
+const char kRemoteDebuggingSSLCert[]        = "remote-debugging-ssl-cert";
+
+// SSL private key file for WSS remote debugging.
+const char kRemoteDebuggingSSLKey[]         = "remote-debugging-ssl-key";
 
 // Enables web socket connections from the specified origins only. '*' allows
 // any origin.

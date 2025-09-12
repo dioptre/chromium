@@ -263,6 +263,105 @@ void ServerStartedOnUI(base::WeakPtr<DevToolsHttpHandler> handler,
   }
 }
 
+// Dual server startup callback
+void DualServerStartedOnUI(base::WeakPtr<DevToolsHttpHandler> handler,
+                           base::Thread* thread,
+                           ServerWrapper* server_wrapper,
+                           ServerWrapper* wss_server_wrapper,
+                           DevToolsSocketFactory* socket_factory,
+                           DevToolsSocketFactory* wss_socket_factory,
+                           std::unique_ptr<net::IPEndPoint> ip_address,
+                           std::unique_ptr<net::IPEndPoint> wss_ip_address) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (handler && thread) {
+    handler->DualServerStarted(
+        std::unique_ptr<base::Thread>(thread),
+        std::unique_ptr<ServerWrapper>(server_wrapper),
+        std::unique_ptr<ServerWrapper>(wss_server_wrapper),
+        std::unique_ptr<DevToolsSocketFactory>(socket_factory),
+        std::unique_ptr<DevToolsSocketFactory>(wss_socket_factory),
+        std::move(ip_address),
+        std::move(wss_ip_address));
+  } else {
+    // Cleanup on failure
+    if (thread) delete thread;
+    if (server_wrapper) delete server_wrapper;
+    if (wss_server_wrapper) delete wss_server_wrapper;
+    if (socket_factory) delete socket_factory;
+    if (wss_socket_factory) delete wss_socket_factory;
+  }
+}
+
+// Start dual HTTP + WSS servers
+void StartDualServerOnHandlerThread(
+    base::WeakPtr<DevToolsHttpHandler> handler,
+    std::unique_ptr<base::Thread> thread,
+    std::unique_ptr<DevToolsSocketFactory> socket_factory,
+    std::unique_ptr<DevToolsSocketFactory> wss_socket_factory,
+    const base::FilePath& output_directory,
+    const base::FilePath& debug_frontend_dir,
+    const std::string& browser_guid,
+    bool bundles_resources) {
+  DCHECK(thread->task_runner()->BelongsToCurrentThread());
+  
+  std::unique_ptr<ServerWrapper> server_wrapper;
+  std::unique_ptr<ServerWrapper> wss_server_wrapper;
+  std::unique_ptr<net::IPEndPoint> ip_address(new net::IPEndPoint);
+  std::unique_ptr<net::IPEndPoint> wss_ip_address(new net::IPEndPoint);
+
+  // Create HTTP server
+  if (socket_factory) {
+    std::unique_ptr<net::ServerSocket> server_socket =
+        socket_factory->CreateForHttpServer();
+    if (server_socket) {
+      server_wrapper =
+          std::make_unique<ServerWrapper>(handler, std::move(server_socket),
+                                          debug_frontend_dir, bundles_resources);
+      if (server_wrapper->GetLocalAddress(ip_address.get()) != net::OK)
+        ip_address.reset();
+    }
+  }
+
+  // Create WSS server
+  if (wss_socket_factory) {
+    std::unique_ptr<net::ServerSocket> wss_server_socket =
+        wss_socket_factory->CreateForHttpServer();
+    if (wss_server_socket) {
+      wss_server_wrapper =
+          std::make_unique<ServerWrapper>(handler, std::move(wss_server_socket),
+                                          debug_frontend_dir, bundles_resources);
+      if (wss_server_wrapper->GetLocalAddress(wss_ip_address.get()) != net::OK)
+        wss_ip_address.reset();
+    }
+  }
+
+  // Write ports to output file if specified
+  if (ip_address || wss_ip_address) {
+    if (!output_directory.empty()) {
+      base::FilePath path =
+          output_directory.Append(kDevToolsActivePortFileName);
+      std::string port_info;
+      if (ip_address) {
+        port_info += base::NumberToString(ip_address->port());
+      }
+      if (wss_ip_address) {
+        if (!port_info.empty()) port_info += "\n";
+        port_info += "wss:" + base::NumberToString(wss_ip_address->port());
+      }
+      base::WriteFile(path, port_info);
+    }
+  }
+
+  GetUIThreadTaskRunner({})->PostTask(
+      FROM_HERE, base::BindOnce(&DualServerStartedOnUI, handler, thread.release(),
+                                server_wrapper.release(), 
+                                wss_server_wrapper.release(),
+                                socket_factory.release(),
+                                wss_socket_factory.release(),
+                                std::move(ip_address),
+                                std::move(wss_ip_address)));
+}
+
 void StartServerOnHandlerThread(
     base::WeakPtr<DevToolsHttpHandler> handler,
     std::unique_ptr<base::Thread> thread,
@@ -845,6 +944,78 @@ DevToolsHttpHandler::DevToolsHttpHandler(
                        output_directory, debug_frontend_dir, browser_guid_,
                        delegate_->HasBundledFrontendResources()));
   }
+  
+  InitRemoteAllowOrigins();
+}
+
+// WSS-enabled constructor
+DevToolsHttpHandler::DevToolsHttpHandler(
+    DevToolsManagerDelegate* delegate,
+    std::unique_ptr<DevToolsSocketFactory> socket_factory,
+    std::unique_ptr<DevToolsSocketFactory> wss_socket_factory,
+    const base::FilePath& output_directory,
+    const base::FilePath& debug_frontend_dir)
+    : delegate_(delegate) {
+  browser_guid_ =
+      delegate_->IsBrowserTargetDiscoverable()
+          ? kBrowserUrlPrefix
+          : base::StringPrintf(
+                "%s/%s", kBrowserUrlPrefix,
+                base::Uuid::GenerateRandomV4().AsLowercaseString().c_str());
+
+  std::unique_ptr<base::Thread> thread(
+      new base::Thread(kDevToolsHandlerThreadName));
+  base::Thread::Options options;
+  options.message_pump_type = base::MessagePumpType::IO;
+  
+  if (thread->StartWithOptions(std::move(options))) {
+    auto task_runner = thread->task_runner();
+    
+    // Start both HTTP and WSS servers
+    task_runner->PostTask(
+        FROM_HERE,
+        base::BindOnce(&StartDualServerOnHandlerThread, weak_factory_.GetWeakPtr(),
+                       std::move(thread), std::move(socket_factory), 
+                       std::move(wss_socket_factory), output_directory, 
+                       debug_frontend_dir, browser_guid_,
+                       delegate_->HasBundledFrontendResources()));
+  }
+
+  InitRemoteAllowOrigins();
+}
+
+DevToolsHttpHandler::DevToolsHttpHandler(
+    DevToolsManagerDelegate* delegate,
+    std::unique_ptr<DevToolsSocketFactory> wss_socket_factory,
+    const base::FilePath& output_directory,
+    const base::FilePath& debug_frontend_dir,
+    bool wss_only)
+    : wss_only_mode_(wss_only), delegate_(delegate) {
+  browser_guid_ =
+      delegate_->IsBrowserTargetDiscoverable()
+          ? kBrowserUrlPrefix
+          : base::StringPrintf(
+                "%s/%s", kBrowserUrlPrefix,
+                base::Uuid::GenerateRandomV4().AsLowercaseString().c_str());
+                
+  std::unique_ptr<base::Thread> thread(
+      new base::Thread(kDevToolsHandlerThreadName));
+  base::Thread::Options options;
+  options.message_pump_type = base::MessagePumpType::IO;
+  
+  if (thread->StartWithOptions(std::move(options))) {
+    auto task_runner = thread->task_runner();
+    task_runner->PostTask(
+        FROM_HERE,
+        base::BindOnce(&StartServerOnHandlerThread, weak_factory_.GetWeakPtr(),
+                       std::move(thread), std::move(wss_socket_factory),
+                       output_directory, debug_frontend_dir, browser_guid_,
+                       delegate_->HasBundledFrontendResources()));
+  }
+  InitRemoteAllowOrigins();
+}
+
+void DevToolsHttpHandler::InitRemoteAllowOrigins() {
   std::string remote_allow_origins = base::ToLowerASCII(
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kRemoteAllowOrigins));
@@ -864,6 +1035,27 @@ void DevToolsHttpHandler::ServerStarted(
   server_wrapper_ = std::move(server_wrapper);
   socket_factory_ = std::move(socket_factory);
   server_ip_address_ = std::move(ip_address);
+}
+
+void DevToolsHttpHandler::DualServerStarted(
+    std::unique_ptr<base::Thread> thread,
+    std::unique_ptr<ServerWrapper> server_wrapper,
+    std::unique_ptr<ServerWrapper> wss_server_wrapper,
+    std::unique_ptr<DevToolsSocketFactory> socket_factory,
+    std::unique_ptr<DevToolsSocketFactory> wss_socket_factory,
+    std::unique_ptr<net::IPEndPoint> ip_address,
+    std::unique_ptr<net::IPEndPoint> wss_ip_address) {
+  thread_ = std::move(thread);
+  server_wrapper_ = std::move(server_wrapper);
+  wss_server_wrapper_ = std::move(wss_server_wrapper);
+  socket_factory_ = std::move(socket_factory);
+  server_ip_address_ = std::move(ip_address);
+  wss_server_ip_address_ = std::move(wss_ip_address);
+  
+  if (wss_server_ip_address_) {
+    LOG(INFO) << "DevTools WSS listening on " 
+              << wss_server_ip_address_->ToString();
+  }
 }
 
 void DevToolsHttpHandler::SendJson(int connection_id,
@@ -967,9 +1159,24 @@ base::Value::Dict DevToolsHttpHandler::SerializeDescriptor(
   if (favicon_url.is_valid())
     dictionary.Set(kTargetFaviconUrlField, favicon_url.spec());
 
-  dictionary.Set(kTargetWebSocketDebuggerUrlField,
-                 base::StringPrintf("ws://%s%s%s", host.c_str(), kPageUrlPrefix,
-                                    id.c_str()));
+  if (wss_only_mode_) {
+    dictionary.Set(kTargetWebSocketDebuggerUrlField,
+                   base::StringPrintf("wss://%s%s%s", host.c_str(), kPageUrlPrefix,
+                                      id.c_str()));
+  } else {
+    dictionary.Set(kTargetWebSocketDebuggerUrlField,
+                   base::StringPrintf("ws://%s%s%s", host.c_str(), kPageUrlPrefix,
+                                      id.c_str()));
+    
+    // Add WSS URL if WSS server is available
+    if (wss_server_ip_address_) {
+      std::string wss_host = wss_server_ip_address_->ToString();
+      dictionary.Set("webSocketDebuggerUrlSecure",
+                     base::StringPrintf("wss://%s%s%s", wss_host.c_str(), kPageUrlPrefix,
+                                        id.c_str()));
+    }
+  }
+  
   dictionary.Set(kTargetDevtoolsFrontendUrlField,
                  GetFrontendURLInternal(agent_host, id, host));
 

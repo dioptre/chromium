@@ -144,6 +144,9 @@ class CONTENT_EXPORT DevToolsAgentHost
       std::unique_ptr<DevToolsSocketFactory> server_socket_factory,
       const base::FilePath& active_port_output_directory,
       const base::FilePath& debug_frontend_dir);
+  
+  // Dual server method removed - using single --wss flag approach
+      
   static void StopRemoteDebuggingServer();
 
   // Starts remote debugging for browser target for the given fd=3
