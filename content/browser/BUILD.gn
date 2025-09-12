@@ -171,6 +171,7 @@ source_set("browser") {
     "//content/browser/content_index:content_index_proto",
     "//content/browser/cookie_store:cookie_store_proto",
     "//content/browser/devtools:devtools_background_services_proto",
+    "//content/browser/devtools:vp9_stream_proto",
     "//content/browser/devtools:protocol_sources",
     "//content/browser/download:proto",
     "//content/browser/file_system_access:proto",
@@ -345,7 +346,9 @@ source_set("browser") {
     "//ui/webui/resources",
     "//v8",
     "//v8:v8_version",
-  ]
+
+    "//third_party/libvpx",
+    "//third_party/libyuv",  ]
 
   public_deps = [
     "//base",
@@ -955,6 +958,10 @@ source_set("browser") {
     "devtools/protocol/overlay_handler.h",
     "devtools/protocol/page_handler.cc",
     "devtools/protocol/page_handler.h",
+    "devtools/protocol/vp9_frame_streamer.cc",
+    "devtools/protocol/vp9_frame_streamer.h",
+    "devtools/protocol/page_handler_vp9_patch.cc",
+    "devtools/protocol/page_handler_vp9_patch.h",
     "devtools/protocol/preload_handler.cc",
     "devtools/protocol/preload_handler.h",
     "devtools/protocol/schema_handler.cc",
