@@ -6,6 +6,8 @@ syntax = "proto3";
 
 package content.protocol;
 
+option optimize_for = LITE_RUNTIME;
+
 // VP9 streaming protocol for DevTools
 message VP9StreamFrame {
   // Magic identifier for frame validation

@@ -33,6 +33,9 @@
 #include "third_party/blink/public/mojom/manifest/manifest.mojom-forward.h"
 #include "url/gurl.h"
 
+// VP9 streaming support
+#include "content/browser/devtools/protocol/vp9_stream.pb.h"
+
 class SkBitmap;
 
 namespace base {
@@ -48,6 +51,10 @@ namespace content {
 class BackForwardCacheCanStoreDocumentResult;
 class DevToolsAgentHostImpl;
 class FrameTreeNode;
+
+namespace protocol {
+class PageHandlerVP9Extension;
+}  // namespace protocol
 class NavigationRequest;
 class RenderFrameHostImpl;
 class WebContentsImpl;
@@ -165,6 +172,17 @@ class PageHandler : public DevToolsDomainHandler,
   Response StopScreencast() override;
   Response ScreencastFrameAck(int session_id) override;
 
+  // VP9 streaming methods
+  Response StartVP9Screencast(std::optional<int> fps,
+                              std::optional<int> quality,
+                              std::optional<int> max_width,
+                              std::optional<int> max_height,
+                              std::optional<int> keyframe_interval,
+                              std::optional<double> change_threshold);
+  Response StopVP9Screencast();
+  Response GetVP9StreamConfig(std::unique_ptr<VP9StreamConfig>* config);
+  Response UpdateVP9StreamConfig(std::unique_ptr<VP9StreamConfig> config);
+
   Response HandleJavaScriptDialog(
       bool accept,
       std::optional<std::string> prompt_text) override;
@@ -266,6 +284,7 @@ class PageHandler : public DevToolsDomainHandler,
   raw_ptr<BrowserHandler> browser_handler_;
 
   std::unique_ptr<Page::Frontend> frontend_;
+  std::unique_ptr<protocol::PageHandlerVP9Extension> vp9_extension_;
 
   base::ScopedObservation<RenderWidgetHost, RenderWidgetHostObserver>
       observation_{this};

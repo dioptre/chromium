@@ -181,16 +181,18 @@ void PageHandlerVP9Extension::SendVP9FrameToFrontend(const VP9StreamFrame& frame
       break;
   }
   
-  // Create metadata
-  auto metadata = Page::ScreencastFrameMetadata::Create();
-  metadata->SetPageScaleFactor(frame.metadata().page_scale_factor())
+  // Create metadata with all required fields
+  auto metadata = Page::ScreencastFrameMetadata::Create()
+          .SetPageScaleFactor(frame.metadata().page_scale_factor())
           .SetDeviceWidth(frame.metadata().width())
           .SetDeviceHeight(frame.metadata().height())
           .SetScrollOffsetX(frame.metadata().scroll_offset_x())
           .SetScrollOffsetY(frame.metadata().scroll_offset_y())
-          .SetTimestamp(frame.metadata().timestamp_us() / 1000000.0);
+          .SetTimestamp(frame.metadata().timestamp_us() / 1000000.0)
+          .SetOffsetTop(0)
+          .Build();
   
-  vp9_frame->SetMetadata(metadata->Build());
+  vp9_frame->SetMetadata(std::move(metadata));
   
   // Send to frontend via PageHandler
   // Note: This would require extending the PageHandler with a new event
@@ -212,7 +214,7 @@ std::string PageHandlerVP9Extension::EncodeVP9FrameToBase64(const VP9StreamFrame
   
   // Encode as base64 for transport over DevTools protocol
   std::string encoded;
-  base::Base64Encode(serialized_frame, &encoded);
+  encoded = base::Base64Encode(serialized_frame);
   return encoded;
 }
 

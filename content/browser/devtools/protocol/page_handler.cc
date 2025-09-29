@@ -35,6 +35,7 @@
 #include "content/browser/devtools/protocol/emulation_handler.h"
 #include "content/browser/devtools/protocol/handler_helpers.h"
 #include "content/browser/devtools/protocol/page.h"
+#include "content/browser/devtools/protocol/page_handler_vp9_patch.h"
 #include "content/browser/manifest/manifest_manager_host.h"
 #include "content/browser/preloading/prerender/prerender_final_status.h"
 #include "content/browser/renderer_host/back_forward_cache_can_store_document_result.h"
@@ -526,6 +527,9 @@ PageHandler::PageHandler(
       &PageHandler::OnFrameFromVideoConsumer, weak_factory_.GetWeakPtr()));
   video_consumer_->SetFormat(kScreencastPixelFormat);
   DCHECK(emulation_handler_);
+  
+  // Initialize VP9 streaming extension
+  vp9_extension_ = std::make_unique<protocol::PageHandlerVP9Extension>(this);
 }
 
 PageHandler::~PageHandler() = default;
@@ -1456,6 +1460,41 @@ Response PageHandler::ScreencastFrameAck(int session_id) {
   if (session_id == session_id_)
     --frames_in_flight_;
   return Response::Success();
+}
+
+// VP9 streaming methods - delegate to extension
+Response PageHandler::StartVP9Screencast(std::optional<int> fps,
+                                         std::optional<int> quality,
+                                         std::optional<int> max_width,
+                                         std::optional<int> max_height,
+                                         std::optional<int> keyframe_interval,
+                                         std::optional<double> change_threshold) {
+  if (!vp9_extension_) {
+    return Response::ServerError("VP9 extension not initialized");
+  }
+  return vp9_extension_->StartVP9Screencast(fps, quality, max_width, max_height, 
+                                            keyframe_interval, change_threshold);
+}
+
+Response PageHandler::StopVP9Screencast() {
+  if (!vp9_extension_) {
+    return Response::ServerError("VP9 extension not initialized");
+  }
+  return vp9_extension_->StopVP9Screencast();
+}
+
+Response PageHandler::GetVP9StreamConfig(std::unique_ptr<VP9StreamConfig>* config) {
+  if (!vp9_extension_) {
+    return Response::ServerError("VP9 extension not initialized");
+  }
+  return vp9_extension_->GetVP9StreamConfig(config);
+}
+
+Response PageHandler::UpdateVP9StreamConfig(std::unique_ptr<VP9StreamConfig> config) {
+  if (!vp9_extension_) {
+    return Response::ServerError("VP9 extension not initialized");
+  }
+  return vp9_extension_->UpdateVP9StreamConfig(std::move(config));
 }
 
 Response PageHandler::HandleJavaScriptDialog(

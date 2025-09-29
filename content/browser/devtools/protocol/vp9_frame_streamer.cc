@@ -29,7 +29,7 @@ namespace {
 
 constexpr base::TimeDelta kMinFrameInterval = base::Milliseconds(16);  // ~60fps max
 constexpr base::TimeDelta kMaxFrameInterval = base::Milliseconds(1000); // 1fps min
-constexpr float kDefaultChangesThreshold = 0.01f;  // 1% changes
+// Removed unused variable
 
 // Convert SkBitmap to I420 format for VP9 encoding
 scoped_refptr<media::VideoFrame> ConvertBitmapToI420VideoFrame(
@@ -58,13 +58,13 @@ scoped_refptr<media::VideoFrame> ConvertBitmapToI420VideoFrame(
   const uint8_t* src_bgra = static_cast<const uint8_t*>(bitmap.getPixels());
   int src_stride_bgra = bitmap.rowBytes();
   
-  uint8_t* dst_y = video_frame->writable_data(media::VideoFrame::kYPlane);
-  uint8_t* dst_u = video_frame->writable_data(media::VideoFrame::kUPlane);
-  uint8_t* dst_v = video_frame->writable_data(media::VideoFrame::kVPlane);
+  uint8_t* dst_y = video_frame->writable_data(media::VideoFrame::Plane::kY);
+  uint8_t* dst_u = video_frame->writable_data(media::VideoFrame::Plane::kU);
+  uint8_t* dst_v = video_frame->writable_data(media::VideoFrame::Plane::kV);
   
-  int dst_stride_y = video_frame->stride(media::VideoFrame::kYPlane);
-  int dst_stride_u = video_frame->stride(media::VideoFrame::kUPlane);
-  int dst_stride_v = video_frame->stride(media::VideoFrame::kVPlane);
+  int dst_stride_y = video_frame->stride(media::VideoFrame::Plane::kY);
+  int dst_stride_u = video_frame->stride(media::VideoFrame::Plane::kU);
+  int dst_stride_v = video_frame->stride(media::VideoFrame::Plane::kV);
 
   // Use libyuv for conversion
   int result = libyuv::ARGBToI420(
@@ -179,15 +179,14 @@ bool VP9FrameStreamer::InitializeEncoder(const gfx::Size& frame_size) {
   // Create VP9 encoder options
   media::VideoEncoder::Options options;
   options.frame_size = frame_size;
-  options.bitrate = media::Bitrate::VariableBitrate(
-      1000000 * config_.quality / 100);  // Scale bitrate by quality
+  uint32_t target_bps = 1000000 * config_.quality / 100;
+  options.bitrate = media::Bitrate::VariableBitrate(target_bps, target_bps * 2);
   options.framerate = config_.fps;
   options.keyframe_interval = config_.keyframe_interval;
   options.content_hint = media::VideoEncoder::ContentHint::Screen;
   options.latency_mode = media::VideoEncoder::LatencyMode::Realtime;
   
-  vp9_encoder_ = std::make_unique<media::VpxVideoEncoder>(
-      media::VideoCodecProfile::VP9PROFILE_PROFILE0);
+  vp9_encoder_ = std::make_unique<media::VpxVideoEncoder>();
   
   // Initialize encoder
   bool success = false;
@@ -195,6 +194,7 @@ bool VP9FrameStreamer::InitializeEncoder(const gfx::Size& frame_size) {
       media::VP9PROFILE_PROFILE0,
       options,
       media::VideoEncoder::EncoderInfoCB(),
+      base::DoNothing(),
       base::BindOnce([](bool* result, media::EncoderStatus status) {
         *result = status.is_ok();
       }, &success));
@@ -226,28 +226,48 @@ std::optional<std::vector<uint8_t>> VP9FrameStreamer::EncodeFrame(
   media::VideoEncoder::EncodeOptions encode_options;
   encode_options.key_frame = is_keyframe;
   
-  // Encode frame
+  // Encode frame with real VP9 encoder
   std::vector<uint8_t> encoded_data;
-  bool encode_done = false;
+  bool encoding_complete = false;
   
+  // Set up encoder output callback - match OutputCB signature
+  auto output_cb = base::BindRepeating([](std::vector<uint8_t>* data, bool* complete,
+                                         media::VideoEncoderOutput output,
+                                         std::optional<std::vector<uint8_t>> codec_desc) {
+    if (!output.data.empty()) {
+      data->resize(output.data.size());
+      std::copy(output.data.begin(), output.data.end(), data->begin());
+    }
+    *complete = true;
+  }, &encoded_data, &encoding_complete);
+  
+  // Create encoder options
+  media::VideoEncoder::Options encoder_options;
+  encoder_options.frame_size = gfx::Size(bitmap.width(), bitmap.height());
+  encoder_options.bitrate = media::Bitrate::VariableBitrate(1000000u, 2000000u);
+  encoder_options.framerate = 30;
+  encoder_options.keyframe_interval = 30;
+
+  // Initialize encoder with output callback
+  vp9_encoder_->Initialize(
+      media::VP9PROFILE_PROFILE0,
+      encoder_options,
+      media::VideoEncoder::EncoderInfoCB(),
+      output_cb,
+      base::BindOnce([](media::EncoderStatus status) {
+        // Encoder initialized
+      }));
+  
+  // Encode the frame  
   vp9_encoder_->Encode(
-      video_frame, 
+      video_frame,
       encode_options,
-      base::BindOnce([](std::vector<uint8_t>* data, bool* done,
-                       media::EncoderStatus status,
-                       media::VideoEncoderOutput output) {
-        if (status.is_ok() && output.data && !output.data->empty()) {
-          data->assign(output.data->begin(), output.data->end());
-        }
-        *done = true;
-      }, &encoded_data, &encode_done));
+      base::BindOnce([](media::EncoderStatus status) {
+        // Frame encoded
+      }));
       
-  // Wait for encoding to complete (synchronous for now)
-  // In production, this would be asynchronous
-  base::RunLoop run_loop;
-  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
-      FROM_HERE, run_loop.QuitClosure(), base::Milliseconds(100));
-  run_loop.Run();
+  // Wait for encoding (synchronous for now)
+  base::ThreadPoolInstance::Get()->FlushForTesting();
   
   if (!encoded_data.empty()) {
     return encoded_data;
@@ -280,7 +300,7 @@ FrameMetadata VP9FrameStreamer::CreateMetadata(
   FrameMetadata metadata;
   metadata.set_width(bitmap.width());
   metadata.set_height(bitmap.height());
-  metadata.set_timestamp_us(base::Time::Now().InMicrosecondsSinceUnixEpoch());
+  metadata.set_timestamp_us(base::Time::Now().ToDeltaSinceWindowsEpoch().InMicroseconds());
   metadata.set_device_scale_factor(device_scale_factor);
   metadata.set_page_scale_factor(page_scale_factor);
   metadata.set_scroll_offset_x(scroll_offset.x());

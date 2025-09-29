@@ -71,6 +71,9 @@ namespace Page {
 // VP9 screencast frame event
 class VP9ScreencastFrame {
  public:
+  VP9ScreencastFrame();
+  ~VP9ScreencastFrame();
+  
   static std::unique_ptr<VP9ScreencastFrame> Create() {
     return std::make_unique<VP9ScreencastFrame>();
   }
