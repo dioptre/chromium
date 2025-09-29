@@ -1,5 +1,28 @@
 # ![Logo](chrome/app/theme/chromium/product_logo_64.png) Chromium
 
+out/Default/args.gn
+```
+# WORKING Chrome build - DISABLE ALL ML SERVICES
+target_cpu = "arm64"
+host_cpu = "arm64"
+is_component_build = true
+is_debug = false
+symbol_level = 0
+
+# NUCLEAR DISABLE ALL ML CRAP
+use_xnnpack = false
+enable_tflite = false
+enable_ml_internal = false
+enable_webnn = false
+enable_on_device_model = false
+enable_ml_service = false
+
+# Keep essential
+enable_supervised_users = true
+ffmpeg_branding = "Chrome"
+proprietary_codecs = true
+```
+
 Chromium is an open-source browser project that aims to build a safer, faster,
 and more stable way for all users to experience the web.
 

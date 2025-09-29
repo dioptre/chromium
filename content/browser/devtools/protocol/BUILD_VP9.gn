@@ -1,0 +1,81 @@
+# Copyright 2025 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# VP9 streaming extensions for DevTools Protocol
+
+import("//third_party/protobuf/proto_library.gni")
+
+# VP9 stream protobuf definitions
+proto_library("vp9_stream_proto") {
+  sources = [ "vp9_stream.proto" ]
+  
+  generate_python = false
+  generate_cc = true
+  
+  deps = []
+}
+
+# VP9 frame streamer implementation
+component("vp9_frame_streamer") {
+  sources = [
+    "vp9_frame_streamer.cc",
+    "vp9_frame_streamer.h",
+  ]
+
+  public_deps = [
+    ":vp9_stream_proto",
+    "//base",
+    "//content/browser/devtools",
+    "//media",
+    "//media/video:video",
+    "//skia",
+    "//third_party/libyuv",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+  ]
+
+  deps = [
+    "//base",
+    "//content/common",
+    "//content/public/browser",
+    "//media/base",
+    "//media/video",
+    "//third_party/protobuf:protobuf_lite",
+    "//third_party/skia",
+    "//ui/snapshot",
+  ]
+}
+
+# PageHandler VP9 extensions
+component("page_handler_vp9_extension") {
+  sources = [
+    "page_handler_vp9_patch.cc",
+    "page_handler_vp9_patch.h",
+  ]
+
+  public_deps = [
+    ":vp9_frame_streamer",
+    ":vp9_stream_proto",
+    "//content/browser/devtools/protocol:devtools_protocol",
+  ]
+
+  deps = [
+    "//base",
+    "//content/browser/devtools",
+    "//content/public/browser",
+  ]
+}
+
+# Add to main devtools protocol target
+# This would be integrated into the existing BUILD.gn file:
+#
+# In content/browser/devtools/protocol/BUILD.gn, add to sources:
+#   "page_handler_vp9_patch.cc",
+#   "page_handler_vp9_patch.h", 
+#   "vp9_frame_streamer.cc",
+#   "vp9_frame_streamer.h",
+#
+# And add to deps:
+#   ":vp9_stream_proto",
+#   "//media/video",

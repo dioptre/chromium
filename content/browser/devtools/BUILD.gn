@@ -184,3 +184,10 @@ inspector_protocol_generate("protocol_sources") {
 proto_library("devtools_background_services_proto") {
   sources = [ "devtools_background_services.proto" ]
 }
+
+proto_library("vp9_stream_proto") {
+  sources = [ "protocol/vp9_stream.proto" ]
+  generate_python = false
+  generate_cc = true
+  cc_generator_options = "lite"
+}

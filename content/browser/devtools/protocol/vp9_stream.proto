@@ -1,0 +1,81 @@
+// Copyright 2025 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+syntax = "proto3";
+
+package content.protocol;
+
+option optimize_for = LITE_RUNTIME;
+
+// VP9 streaming protocol for DevTools
+message VP9StreamFrame {
+  // Magic identifier for frame validation
+  string magic_id = 1;
+  
+  // Sequential frame number for ordering and duplicate detection
+  uint64 frame_number = 2;
+  
+  // VP9 encoded frame data
+  bytes frame_data = 3;
+  
+  // Frame metadata
+  FrameMetadata metadata = 4;
+  
+  // Frame type information
+  FrameType frame_type = 5;
+}
+
+message FrameMetadata {
+  // Frame dimensions
+  uint32 width = 1;
+  uint32 height = 2;
+  
+  // Timestamp in microseconds since Unix epoch
+  uint64 timestamp_us = 3;
+  
+  // Device scale factor
+  float device_scale_factor = 4;
+  
+  // Page scale factor
+  float page_scale_factor = 5;
+  
+  // Scroll offset
+  float scroll_offset_x = 6;
+  float scroll_offset_y = 7;
+  
+  // Encoding quality (0-100)
+  uint32 quality = 8;
+  
+  // Data size before compression
+  uint32 uncompressed_size = 9;
+}
+
+enum FrameType {
+  FRAME_TYPE_UNKNOWN = 0;
+  FRAME_TYPE_KEY = 1;      // Full frame (keyframe)
+  FRAME_TYPE_DELTA = 2;    // Delta frame with minimal changes
+  FRAME_TYPE_SKIP = 3;     // No changes, skip frame
+}
+
+// Configuration message for streaming session
+message VP9StreamConfig {
+  // Target frames per second
+  uint32 fps = 1;
+  
+  // Keyframe interval (frames between keyframes)
+  uint32 keyframe_interval = 2;
+  
+  // Quality setting (0-100)
+  uint32 quality = 3;
+  
+  // Maximum frame buffer size
+  uint32 max_frame_buffer_size = 4;
+  
+  // Change detection threshold (0.0-1.0)
+  float change_threshold = 5;
+  
+  // Maximum frame dimensions
+  uint32 max_width = 6;
+  uint32 max_height = 7;
+}
